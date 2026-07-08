@@ -18,6 +18,15 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 | `login:az`     | Login to Azure (`az login`). Skips login if a valid token already exists for the configured tenant. Requires `AZURE_TENANT_ID` to be set. |
 | `login:gcloud` | Login to GCP using Application Default Credentials (`gcloud auth application-default login`). Skips login if ADC are already valid.       |
 
+### `k`
+
+| Task             | Description                                                                      |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `k:pod-req-cpu`  | Show resource capacity for all pods ordered by CPU request (`kube-capacity`).    |
+| `k:pod-req-mem`  | Show resource capacity for all pods ordered by memory request (`kube-capacity`). |
+| `k:pod-util-cpu` | Show pod utilization for all pods ordered by CPU usage (`kube-capacity`).        |
+| `k:pod-util-mem` | Show pod utilization for all pods ordered by memory usage (`kube-capacity`).     |
+
 ### `tf`
 
 | Task           | Description                                                                                                                                             |
@@ -41,6 +50,10 @@ mise login:az
 mise login:gcloud
 mise tf:summarize          # defaults to site=k8s
 mise tf:summarize helm
+mise k:pod-req-cpu
+mise k:pod-req-mem
+mise k:pod-util-cpu
+mise k:pod-util-mem
 ```
 
 ## Environment Variables

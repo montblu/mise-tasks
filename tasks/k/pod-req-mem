@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+#MISE description="Show resource capacity ordered by memory"
+
+kube-capacity -u --sort mem.req --pods
