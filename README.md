@@ -18,6 +18,12 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 | `login:az`     | Login to Azure (`az login`). Skips login if a valid token already exists for the configured tenant. Requires `AZURE_TENANT_ID` to be set. |
 | `login:gcloud` | Login to GCP using Application Default Credentials (`gcloud auth application-default login`). Skips login if ADC are already valid.       |
 
+### `tf`
+
+| Task           | Description                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tf:summarize` | Runs a Terraform plan via `terrabutler` for the given site and summarises the output with `tf-summarize`. Accepts a `<site>` argument (default: `k8s`). |
+
 ## Setup
 
 Point mise at this repository as a task source by adding it to your mise configuration:
@@ -33,6 +39,8 @@ After that, the tasks are available:
 mise login:aws
 mise login:az
 mise login:gcloud
+mise tf:summarize          # defaults to site=k8s
+mise tf:summarize helm
 ```
 
 ## Environment Variables
