@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+#MISE description="Run terrabutler all-sites on all environments"
+#MISE raw=true
+
+for env in $(mise cfg get vars.environments); do
+  mise tf:all-sites-on-env $env
+done

@@ -29,9 +29,12 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 
 ### `tf`
 
-| Task           | Description                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tf:summarize` | Runs a Terraform plan via `terrabutler` for the given site and summarises the output with `tf-summarize`. Accepts a `<site>` argument (default: `k8s`). |
+| Task                          | Description                                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tf:all-sites-on-env`         | Selects the given `<env>` environment and runs `terrabutler tf apply` across all sites. Accepts an `<env>` argument.                                    |
+| `tf:all-sites-on-all-envs`    | Iterates over all environments defined in `vars.environments` and runs `tf:all-sites-on-env` for each.                                                  |
+| `tf:all-sites-on-current-env` | Runs `terrabutler tf apply` across all sites in the currently selected environment. Hidden task, used internally by the tasks above.                    |
+| `tf:summarize`                | Runs a Terraform plan via `terrabutler` for the given site and summarises the output with `tf-summarize`. Accepts a `<site>` argument (default: `k8s`). |
 
 ## Setup
 
@@ -48,6 +51,8 @@ After that, the tasks are available:
 mise login:aws
 mise login:az
 mise login:gcloud
+mise tf:all-sites-on-env staging
+mise tf:all-sites-on-all-envs
 mise tf:summarize          # defaults to site=k8s
 mise tf:summarize helm
 mise k:pod-req-cpu

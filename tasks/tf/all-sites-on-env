@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+#MISE description= "Run terrabutler all-sites on a given environment"
+#MISE raw=true
+#USAGE arg "<env>" help="Environment to run on" {}
+
+terrabutler env select ${usage_env}
+mise tf:all-sites-on-current-env
