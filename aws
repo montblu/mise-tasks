@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+#MISE description="Login to AWS"
+
+aws sts get-caller-identity >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "AWS session not active. Logging in..."
+    aws sso login --profile $AWS_SSO_PROFILE
+else
+    echo "AWS session already active"
+fi
