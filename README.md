@@ -24,7 +24,7 @@ Point mise at this repository as a task source by adding it to your mise configu
 
 ```toml
 [task_config]
-includes = ["https://github.com/montblu/mise-tasks"]
+includes = ["git::https://github.com/montblu/mise-tasks.git//tasks?ref=main"]
 ```
 
 After that, the tasks are available:
