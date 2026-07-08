@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
 #MISE description="Show resource capacity ordered by CPU"
 
+set -eu
+
 kube-capacity -u --sort cpu.req --pods

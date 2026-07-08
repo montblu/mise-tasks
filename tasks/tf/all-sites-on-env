@@ -3,5 +3,7 @@
 #MISE raw=true
 #USAGE arg "<env>" help="Environment to run on" {}
 
+set -eu
+
 terrabutler env select ${usage_env}
 mise tf:all-sites-on-current-env

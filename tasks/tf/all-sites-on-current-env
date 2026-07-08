@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
-#MISE description = "Run terrabutler all-sites on current environment"
+#MISE description = "Run terrabutler on all sites on current environment"
 #MISE raw=true
-#MISE hide=true
+#USAGE arg "<action>" default="apply" help="Terrabutler action to perform" {}
+
+set -eu
 
 for site in $(mise cfg get vars.sites); do
-  terrabutler tf -site $site apply
+  terrabutler tf -site $site ${usage_action}
 done

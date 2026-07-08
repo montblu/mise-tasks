@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
 #MISE description="Show pod utilization ordered by memory"
 
+set -eu
+
 kube-capacity -u --sort mem.util --pods

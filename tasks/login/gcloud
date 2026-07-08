@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 #MISE description="Login to GCP"
 
+set -eu
+
 gcloud auth application-default print-access-token >/dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "GCP ADC session not active or expired. Logging in..."

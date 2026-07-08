@@ -3,5 +3,7 @@
 #MISE raw=true
 #USAGE arg "<site>" default="k8s" help="Terrabulter site to summarize" {}
 
+set -eu
+
 terrabutler tf -site ${usage_site} plan -out=/tmp/tfplan
 terrabutler tf -site ${usage_site} show -json /tmp/tfplan | tf-summarize
