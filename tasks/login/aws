@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 #MISE description="Login to AWS"
 
-set -eu
+set -u
 
 aws sts get-caller-identity >/dev/null 2>&1
 if [ $? -ne 0 ]; then
