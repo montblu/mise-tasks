@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 #MISE description="Login to Azure"
 
-set -eu
+set -u
 
 az account get-access-token --tenant $AZURE_TENANT_ID >/dev/null 2>&1
 if [ $? -ne 0 ]; then

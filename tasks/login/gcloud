@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 #MISE description="Login to GCP"
 
-set -eu
+set -u
 
 gcloud auth application-default print-access-token >/dev/null 2>&1
 if [ $? -ne 0 ]; then
