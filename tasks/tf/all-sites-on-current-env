@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-#MISE description = "Run terrabutler on all sites on current environment"
+#MISE description="Run terrabutler on all sites on current environment"
 #MISE raw=true
 #USAGE arg "<action>" default="apply" help="Terrabutler action to perform" {}
 
