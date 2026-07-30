@@ -3,19 +3,8 @@
 #MISE raw=true
 #USAGE arg "<site>" help="Site to run on all environments" {}
 #USAGE arg "<action>" default="apply" help="Terrabutler action to perform" {}
-TB_MISE_CONTINUE_ON_ERROR="${TB_MISE_CONTINUE_ON_ERROR:-ask}"
 
 set -eu
-: "Checking env is set: ${usage_site:?is not set. It should be a mise argument}"
-: "Checking env is set: ${usage_action:?is not set. It should be a mise argument}"
-
-# In the end, I want to change back to the same environment I started with
-_starting_env="${TERRABUTLER_ENV:?is not set}"
-trap revert_to_starting_env EXIT
-revert_to_starting_env() {
-    echo "Reverting back to env: ${_starting_env}"
-    terrabutler env select "${_starting_env}"
-}
 
 _failed_envs=""
 for env in $(mise cfg get vars.environments); do
@@ -31,28 +20,18 @@ for env in $(mise cfg get vars.environments); do
         echo "[ERROR] An error ocurred when action:${usage_action} on site:${usage_site}."
         _failed_envs="${_failed_envs} ${env}"
 
-        case "${TB_MISE_CONTINUE_ON_ERROR}" in
-        yes|y|YES|Yes)
-            continue
-            ;;
-        no|n|NO|No)
-            exit 42
-            ;;
-        esac
-
-        read -p "Do you want to continue with ALL remaining envs on error? [Yn]" -n 1 -r
-        echo
+        [[ ${TB_MISE_CONTINUE_ON_ERROR:-no} == "yes" ]] && continue
+        read -p "Do you want to continue with ALL remaining envs on error? [Yn]" -n 1 -r ; echo
         [[ $REPLY =~ ^[Nn] ]] && exit 42
         TB_MISE_CONTINUE_ON_ERROR=yes
     fi
 done
 
-if [[ "${_failed_envs}" != "" ]]; then
+if [[ $_failed_envs != "" ]]; then
     echo
     echo "############################################################################"
     echo "[ERROR] Not all environments run successfully. Errors on the following envs:"
     echo "       ${_failed_envs}"
     echo "############################################################################"
-    echo
     exit 43
 fi
