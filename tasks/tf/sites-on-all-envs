@@ -1,0 +1,51 @@
+#!/usr/bin/env sh
+#MISE description="Run terrabutler on all (or given) sites on all environments"
+#MISE raw=true
+#USAGE flag "-a --action <action>" default="apply" help="Terrabutler action to perform" {}
+#USAGE flag "-k --keep-going" help="Continue after a failure without asking" {}
+#USAGE arg "[sites]" var=#true help="Sites to run on (default: vars.sites)" {}
+
+set -eu
+
+sites="${usage_sites:-$(mise cfg get vars.sites)}"
+failures=""
+
+# Ask whether to keep going after a failure. Reads from /dev/tty so it still
+# works when stdin has been consumed by terrabutler.
+ask_continue() {
+  if [ -n "${usage_keep_going:-}" ]; then
+    printf '   continuing (--keep-going)\n' >&2
+    return 0
+  fi
+  if ! (: >/dev/tty) 2>/dev/null; then
+    printf '   no tty to ask on, aborting (use --keep-going)\n' >&2
+    return 1
+  fi
+  printf '   continue with the remaining runs? [y/N] ' >/dev/tty
+  read -r reply </dev/tty || reply=""
+  case "${reply}" in
+    y | Y | yes | Yes | YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+for env in $(mise cfg get vars.environments); do
+  if ! terrabutler env select "${env}"; then
+    printf '\n!! failed to select environment %s\n' "${env}" >&2
+    failures="${failures} ${env}(env select)"
+    if ask_continue; then continue; else exit 1; fi
+  fi
+
+  for site in ${sites}; do
+    if ! terrabutler tf -site "${site}" "${usage_action}"; then
+      printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
+      failures="${failures} ${env}/${site}"
+      ask_continue || exit 1
+    fi
+  done
+done
+
+if [ -n "${failures}" ]; then
+  printf '\n!! finished with failures:%s\n' "${failures}" >&2
+  exit 1
+fi
