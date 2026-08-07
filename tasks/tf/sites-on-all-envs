@@ -29,6 +29,15 @@ ask_continue() {
   esac
 }
 
+_finish() {
+    if [ -n "${failures}" ]; then
+      printf '\n!! finished with failures:\n' >&2
+      for f in ${failures} ; do printf '  - %s\n' "${f}" >&2; done
+      exit 1
+    fi
+}
+trap _finish EXIT
+
 for env in $(mise cfg get vars.environments); do
   if ! terrabutler env select "${env}"; then
     printf '\n!! failed to select environment %s\n' "${env}" >&2
@@ -44,8 +53,3 @@ for env in $(mise cfg get vars.environments); do
     fi
   done
 done
-
-if [ -n "${failures}" ]; then
-  printf '\n!! finished with failures:%s\n' "${failures}" >&2
-  exit 1
-fi
