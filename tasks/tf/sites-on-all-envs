@@ -7,6 +7,7 @@
 
 set -eu
 
+org="$(< configs/settings.yml yq '.general.organization')"
 sites="${usage_sites:-$(< configs/settings.yml yq '.sites.ordered[]')}"
 all_envs="$(< configs/settings.yml yq '.environments.permanent[]')"
 failures=""
@@ -48,7 +49,7 @@ trap _finish EXIT
 for env in ${all_envs}; do
   _should_skip_env=$(echo "${sites}" | wc -w)
   for site in ${sites}; do
-      [ -f "configs/variables/*-${env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
+      [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
   done
   [ "${_should_skip_env}" -eq 0 ] && continue
 
@@ -60,7 +61,7 @@ for env in ${all_envs}; do
   fi
 
   for site in ${sites}; do
-    [ -f "configs/variables/*-${env}-${site}.tfvars" ] || continue
+    [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || continue
     if ! terrabutler tf -site "${site}" "${usage_action}"; then
       printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
       failures="${failures} ${env}/${site}"
