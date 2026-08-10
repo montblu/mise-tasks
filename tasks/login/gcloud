@@ -3,6 +3,13 @@
 
 set -eu
 
+if gcloud auth print-access-token >/dev/null 2>&1; then
+    echo "GCP user session already active"
+else
+    echo "GCP user session not active or expired. Logging in..."
+    gcloud auth login
+fi
+
 if gcloud auth application-default print-access-token >/dev/null 2>&1; then
     echo "GCP ADC session already active"
 else
