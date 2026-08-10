@@ -7,6 +7,7 @@
 
 set -eu
 
+org="$(< configs/settings.yml yq '.general.organization')"
 sites="${usage_sites:-$(< configs/settings.yml yq '.sites.ordered[]')}"
 all_envs="$(< configs/settings.yml yq '.environments.permanent[]')"
 failures=""
@@ -48,19 +49,19 @@ trap _finish EXIT
 for env in ${all_envs}; do
   _should_skip_env=$(echo "${sites}" | wc -w)
   for site in ${sites}; do
-      [ -f "configs/variables/aj-${env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
+      [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
   done
   [ "${_should_skip_env}" -eq 0 ] && continue
-
 
   if ! terrabutler env select "${env}"; then
     printf '\n!! failed to select environment %s\n' "${env}" >&2
     failures="${failures} ${env}(env select)"
     if ask_continue; then continue; else exit 1; fi
   fi
+  export TERRABUTLER_ENV="${env}" # mise will not update it inside the script
 
   for site in ${sites}; do
-    [ -f "configs/variables/aj-${env}-${site}.tfvars" ] || continue
+    [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || continue
     if ! terrabutler tf -site "${site}" "${usage_action}"; then
       printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
       failures="${failures} ${env}/${site}"
