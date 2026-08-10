@@ -60,6 +60,7 @@ for env in ${all_envs}; do
   fi
 
   for site in ${sites}; do
+    [ -f "configs/variables/aj-${env}-${site}.tfvars" ] || continue
     if ! terrabutler tf -site "${site}" "${usage_action}"; then
       printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
       failures="${failures} ${env}/${site}"
