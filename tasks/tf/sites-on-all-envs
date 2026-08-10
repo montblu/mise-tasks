@@ -7,7 +7,8 @@
 
 set -eu
 
-sites="${usage_sites:-$(mise cfg get vars.sites)}"
+sites="${usage_sites:-$(< configs/settings.yml yq '.sites.ordered[]')}"
+all_envs="$(< configs/settings.yml yq '.environments.permanent[]')"
 failures=""
 
 # Ask whether to keep going after a failure. Reads from /dev/tty so it still
@@ -44,7 +45,14 @@ _finish() {
 }
 trap _finish EXIT
 
-for env in $(mise cfg get vars.environments); do
+for env in ${all_envs}; do
+  _should_skip_env=$(echo "${sites}" | wc -w)
+  for site in ${sites}; do
+      [ -f "configs/variables/aj-${env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
+  done
+  [ "${_should_skip_env}" -eq 0 ] && continue
+
+
   if ! terrabutler env select "${env}"; then
     printf '\n!! failed to select environment %s\n' "${env}" >&2
     failures="${failures} ${env}(env select)"
@@ -52,6 +60,7 @@ for env in $(mise cfg get vars.environments); do
   fi
 
   for site in ${sites}; do
+    [ -f "configs/variables/aj-${env}-${site}.tfvars" ] || continue
     if ! terrabutler tf -site "${site}" "${usage_action}"; then
       printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
       failures="${failures} ${env}/${site}"
