@@ -58,6 +58,7 @@ for env in ${all_envs}; do
     failures="${failures} ${env}(env select)"
     if ask_continue; then continue; else exit 1; fi
   fi
+  export TERRABUTLER_ENV="${env}" # mise will not update it inside the script
 
   for site in ${sites}; do
     [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || continue
