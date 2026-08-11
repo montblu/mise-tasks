@@ -1,9 +1,40 @@
 #!/usr/bin/env sh
-#MISE description="Run terrabutler all-sites on a given environment"
+#MISE description="Run terrabutler on all (or given) sites on a given environment"
 #MISE raw=true
+#USAGE flag "-a --action <action>" default="apply" help="Terrabutler action to perform" {}
+#USAGE flag "-k --keep-going" help="Continue after a failure without asking" {}
 #USAGE arg "<env>" help="Environment to run on" {}
+#USAGE arg "[sites]" var=#true help="Sites to run on (default: settings.yml sites.ordered)" {}
 
 set -eu
 
-terrabutler env select ${usage_env}
-mise tf:all-sites-on-current-env
+org="$(< configs/settings.yml yq '.general.organization')"
+sites="${usage_sites:-$(< configs/settings.yml yq '.sites.ordered[]')}"
+
+# Nothing to run here if no site has a tfvars file for this environment.
+_should_skip_env=$(echo "${sites}" | wc -w)
+for site in ${sites}; do
+    [ -f "configs/variables/${org}-${usage_env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
+done
+if [ "${_should_skip_env}" -eq 0 ]; then
+  printf 'no sites to run on %s, nothing to do\n' "${usage_env}" >&2
+  exit 0
+fi
+
+_starting_env="${TERRABUTLER_ENV}"
+_finish() {
+    if [ "${_starting_env}" != "${TERRABUTLER_ENV}" ]; then
+        echo "Switching back to env ${_starting_env}" >&2
+        terrabutler env select "${_starting_env}"
+    fi
+}
+trap _finish EXIT
+
+terrabutler env select "${usage_env}"
+export TERRABUTLER_ENV="${usage_env}" # mise will not update it inside the script
+
+# Site loop, tfvars skip and failure handling all live in all-sites-on-current-env.
+mise tf:all-sites-on-current-env \
+  --action "${usage_action}" \
+  ${usage_keep_going:+--keep-going} \
+  ${usage_sites:-}
