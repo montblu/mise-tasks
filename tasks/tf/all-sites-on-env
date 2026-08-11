@@ -1,23 +1,45 @@
 #!/usr/bin/env sh
-#MISE description="Run terrabutler on all (or given) sites on a given environment"
+#MISE description="Run terrabutler on all (or given) sites on one environment (default: current)"
 #MISE raw=true
+#USAGE flag "-e --env <env>" help="Environment to run on (default: current)" {}
 #USAGE flag "-a --action <action>" default="apply" help="Terrabutler action to perform" {}
 #USAGE flag "-k --keep-going" help="Continue after a failure without asking" {}
-#USAGE arg "<env>" help="Environment to run on" {}
 #USAGE arg "[sites]" var=#true help="Sites to run on (default: settings.yml sites.ordered)" {}
 
 set -eu
 
 org="$(< configs/settings.yml yq '.general.organization')"
 sites="${usage_sites:-$(< configs/settings.yml yq '.sites.ordered[]')}"
+env="${usage_env:-${TERRABUTLER_ENV}}"
+failures=""
 
-# Nothing to run here if no site has a tfvars file for this environment.
-_should_skip_env=$(echo "${sites}" | wc -w)
+# Ask whether to keep going after a failure. Reads from /dev/tty so it still
+# works when stdin has been consumed by terrabutler.
+ask_continue() {
+  if [ -n "${usage_keep_going:-}" ]; then
+    printf '   continuing (--keep-going)\n' >&2
+    return 0
+  fi
+  if ! (: >/dev/tty) 2>/dev/null; then
+    printf '   no tty to ask on, aborting (use --keep-going)\n' >&2
+    return 1
+  fi
+  printf '   continue with the remaining runs? [y/N] ' >/dev/tty
+  read -r reply </dev/tty || reply=""
+  case "${reply}" in
+    y | Y | yes | Yes | YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Sites without a tfvars file don't exist in this environment.
+runnable=""
 for site in ${sites}; do
-    [ -f "configs/variables/${org}-${usage_env}-${site}.tfvars" ] || _should_skip_env=$(( _should_skip_env - 1 ))
+  [ -f "configs/variables/${org}-${env}-${site}.tfvars" ] || continue
+  runnable="${runnable} ${site}"
 done
-if [ "${_should_skip_env}" -eq 0 ]; then
-  printf 'no sites to run on %s, nothing to do\n' "${usage_env}" >&2
+if [ -z "${runnable}" ]; then
+  printf 'no sites to run on %s, nothing to do\n' "${env}" >&2
   exit 0
 fi
 
@@ -27,14 +49,24 @@ _finish() {
         echo "Switching back to env ${_starting_env}" >&2
         terrabutler env select "${_starting_env}"
     fi
+
+    if [ -n "${failures}" ]; then
+      printf '\n!! finished with failures:\n' >&2
+      for f in ${failures} ; do printf '  - %s\n' "${f}" >&2; done
+      exit 1
+    fi
 }
 trap _finish EXIT
 
-terrabutler env select "${usage_env}"
-export TERRABUTLER_ENV="${usage_env}" # mise will not update it inside the script
+if [ "${env}" != "${TERRABUTLER_ENV}" ]; then
+  terrabutler env select "${env}"
+  export TERRABUTLER_ENV="${env}" # mise will not update it inside the script
+fi
 
-# Site loop, tfvars skip and failure handling all live in all-sites-on-current-env.
-mise tf:all-sites-on-current-env \
-  --action "${usage_action}" \
-  ${usage_keep_going:+--keep-going} \
-  ${usage_sites:-}
+for site in ${runnable}; do
+  if ! terrabutler tf -site "${site}" "${usage_action}"; then
+    printf '\n!! %s failed on %s/%s\n' "${usage_action}" "${env}" "${site}" >&2
+    failures="${failures} ${env}/${site}"
+    ask_continue || exit 1
+  fi
+done
