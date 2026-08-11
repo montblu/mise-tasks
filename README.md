@@ -31,10 +31,11 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 
 | Task                          | Description                                                                                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tf:all-sites-on-env`         | Selects the given `<env>` environment and runs `terrabutler tf apply` across all sites. Accepts an `<env>` argument.                                    |
-| `tf:sites-on-all-envs`        | Runs `terrabutler tf` for every environment in `vars.environments`. Defaults to all sites in `vars.sites`; pass one or more `[sites]` to narrow it, and `-a/--action` to pick the action (default: `apply`). |
-| `tf:all-sites-on-current-env` | Runs `terrabutler tf apply` across all sites in the currently selected environment. Hidden task, used internally by the tasks above.                    |
+| `tf:all-sites-on-env`         | Runs `terrabutler tf` on one environment — `-e/--env` to pick it, otherwise the currently selected one — and switches back to the original environment afterwards. Same `[sites]` / `-a` / `-k` options as below. |
+| `tf:sites-on-all-envs`        | Runs `terrabutler tf` for every environment in `environments.permanent`. Defaults to all sites in `sites.ordered`; pass one or more `[sites]` to narrow it, `-a/--action` to pick the action (default: `apply`) and `-k/--keep-going` to continue after a failure. |
 | `tf:summarize`                | Runs a Terraform plan via `terrabutler` for the given site and summarises the output with `tf-summarize`. Accepts a `<site>` argument (default: `k8s`). |
+
+The `tf` tasks read the site and environment lists from the consuming project's `configs/settings.yml` (`general.organization`, `sites.ordered`, `environments.permanent`) and skip any site without a matching `configs/variables/<org>-<env>-<site>.tfvars` file.
 
 ## Setup
 
@@ -51,7 +52,10 @@ After that, the tasks are available:
 mise login:aws
 mise login:az
 mise login:gcloud
-mise tf:all-sites-on-env staging
+mise tf:all-sites-on-env                      # all sites on the current env, apply
+mise tf:all-sites-on-env -e staging           # all sites on staging, apply
+mise tf:all-sites-on-env k8s -a plan          # single site on the current env, plan
+mise tf:all-sites-on-env k8s -e staging       # single site on staging, apply
 mise tf:sites-on-all-envs                     # all sites, apply
 mise tf:sites-on-all-envs k8s                 # single site
 mise tf:sites-on-all-envs k8s helm -a plan    # several sites, plan
