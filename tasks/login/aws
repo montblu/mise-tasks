@@ -3,7 +3,24 @@
 
 set -eu
 
-if aws sts get-caller-identity >/dev/null 2>&1; then
+# Check the SSO token itself, not `aws sts get-caller-identity`: the CLI answers
+# that from role credentials cached in ~/.aws/cli/cache, which outlive the SSO
+# token, while Terraform (Go SDK) skips that cache and needs a valid SSO token.
+command -v jq >/dev/null 2>&1 || { echo "login:aws requires jq" >&2; exit 1; }
+
+sha1() {
+    if command -v sha1sum >/dev/null 2>&1; then sha1sum; else shasum -a 1; fi
+}
+
+# The token cache file is named after the sso_session name, or the start URL
+# for legacy profiles without one
+cache_key="$(aws configure get sso_session --profile "$AWS_SSO_PROFILE" 2>/dev/null ||
+    aws configure get sso_start_url --profile "$AWS_SSO_PROFILE" 2>/dev/null || true)"
+token_cache="${HOME}/.aws/sso/cache/$(printf '%s' "$cache_key" | sha1 | cut -d' ' -f1).json"
+
+# Require 5 minutes of validity so a run started now doesn't expire midway
+if [ -n "$cache_key" ] &&
+    jq -e '(.expiresAt | sub("\\.[0-9]+"; "") | fromdateiso8601) > (now + 300)' "$token_cache" >/dev/null 2>&1; then
     echo "AWS session already active"
 else
     echo "AWS session not active. Logging in..."
