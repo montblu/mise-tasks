@@ -14,7 +14,7 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 
 | Task           | Description                                                                                                                               |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `login:aws`    | Login to AWS via SSO (`aws sso login`). Skips login if the SSO token is valid for at least 5 more minutes. Requires `AWS_SSO_PROFILE` to be set and `jq`. |
+| `login:aws`    | Login to AWS via SSO (`aws sso login`). Skips login if the SSO token is valid for at least 5 more minutes. Requires `AWS_SSO_PROFILE` to be set and `yq`. |
 | `login:az`     | Login to Azure (`az login`). Skips login if a valid token already exists for the configured tenant. Requires `AZURE_TENANT_ID` to be set. |
 | `login:gcloud` | Login to GCP using Application Default Credentials (`gcloud auth application-default login`). Skips login if ADC are already valid.       |
 
