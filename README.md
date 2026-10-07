@@ -33,6 +33,7 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tf:all-sites-on-env`         | Runs `terrabutler tf` on one environment — `-e/--env` to pick it, otherwise the currently selected one — and switches back to the original environment afterwards. Same `[sites]` / `-a` / `-k` options as below. |
 | `tf:sites-on-all-envs`        | Runs `terrabutler tf` for every environment in `environments.permanent`. Defaults to all sites in `sites.ordered`; pass one or more `[sites]` to narrow it, `-a/--action` to pick the action (default: `apply`) and `-k/--keep-going` to continue after a failure. |
+| `tf:sensitive-diff`           | Runs a Terraform plan via `terrabutler` for the given `<site>` and lists which attribute paths would be added (`+`), removed (`-`), changed (`~`) or are only known after apply (`?`) — **without printing any values**, so it shows what changed inside `(sensitive value)` attributes such as secrets. Pass an optional `[address]` to target and show only that resource. Requires `jq`. |
 | `tf:summarize`                | Runs a Terraform plan via `terrabutler` for the given site and summarises the output with `tf-summarize`. Accepts a `<site>` argument (default: `k8s`). |
 
 The `tf` tasks read the site and environment lists from the consuming project's `configs/settings.yml` (`general.organization`, `sites.ordered`, `environments.permanent`) and skip any site without a matching `configs/variables/<org>-<env>-<site>.tfvars` file.
@@ -61,6 +62,8 @@ mise tf:all-sites-on-env k8s -e staging       # single site on staging, apply
 mise tf:sites-on-all-envs                     # all sites, apply
 mise tf:sites-on-all-envs k8s                 # single site
 mise tf:sites-on-all-envs k8s helm -a plan    # several sites, plan
+mise tf:sensitive-diff <site>              # attribute paths that change on a site
+mise tf:sensitive-diff <site> '<address>'  # only that resource (also used as --target)
 mise tf:summarize          # defaults to site=k8s
 mise tf:summarize helm
 mise k:pod-req-cpu
