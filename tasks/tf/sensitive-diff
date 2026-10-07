@@ -1,0 +1,51 @@
+#!/usr/bin/env sh
+#MISE description="Plan a site and list which attribute paths would change, without printing any values"
+#MISE raw=true
+#USAGE arg "<site>" help="Terrabutler site to plan" {}
+#USAGE arg "[address]" help="Only show (and target) this resource address" {}
+
+set -eu
+
+# The saved plan holds sensitive values in plain text: keep it private and
+# always remove it.
+umask 077
+plan="$(mktemp -t tfplan.XXXXXX)"
+trap 'rm -f "${plan}"' EXIT
+
+printf '>> env: %s | site: %s\n' "${TERRABUTLER_ENV:-?}" "${usage_site}" >&2
+if [ -n "${usage_address:-}" ]; then
+  terrabutler tf -site "${usage_site}" plan --no-input --out "${plan}" --target "${usage_address}" >&2
+else
+  terrabutler tf -site "${usage_site}" plan --no-input --out "${plan}" >&2
+fi
+
+# terrabutler can exit 0 on usage errors, so check that a plan was written.
+if [ ! -s "${plan}" ]; then
+  printf '>> no plan file was produced, aborting\n' >&2
+  exit 1
+fi
+
+# Print one line per changed leaf attribute: "<op> <address>  <path>", where
+# op is + (added), - (removed), ~ (changed) or ? (known after apply).
+# Values are never printed, so this is safe for sensitive attributes.
+terrabutler tf -site "${usage_site}" show -json "${plan}" | jq -r --arg addr "${usage_address:-}" '
+  def leafpaths: [paths(type != "object" and type != "array")];
+  def anytrue($s; $p): any(range(0; ($p | length) + 1) as $i | (try ($s | getpath($p[:$i])) catch null); . == true);
+  .resource_changes[]?
+  | select(.change.actions != ["no-op"])
+  | select($addr == "" or .address == $addr)
+  | .address as $r
+  | .change as $c
+  | ($c.before // {}) as $b
+  | ($c.after // {}) as $a
+  | (($b | leafpaths) + ($a | leafpaths) + ($c.after_unknown // {} | [paths(. == true)]) | unique)[]
+  | . as $p
+  | ($b | try getpath($p) catch null) as $bv
+  | ($a | try getpath($p) catch null) as $av
+  | (if anytrue($c.after_unknown; $p) then "?"
+     elif $bv == $av then empty
+     elif $bv == null then "+"
+     elif $av == null then "-"
+     else "~" end) as $op
+  | "\($op) \($r)  \($p | map(tostring) | join("."))\(if anytrue($c.before_sensitive; $p) or anytrue($c.after_sensitive; $p) then "  (sensitive)" else "" end)"
+'
