@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+#MISE description="Replace every node of the EKS self-managed node groups (ASGs), one drain at a time"
+#MISE raw=true
+#USAGE arg "[asg]" help="Only this Auto Scaling group (name, or a unique prefix of it); default: every ASG with nodes in the cluster" {}
+#USAGE flag "-y --yes" help="Don't ask for confirmation before each step (problems still ask)"
+#USAGE flag "--pods-timeout <seconds>" help="How long to wait for the pods to be healthy after each node" default="900" {}
+
+set -euo pipefail
+
+# Rolls the nodes onto each ASG's current launch template (e.g. a new AMI after
+# an EKS upgrade) while keeping pod disruption to a minimum. One ASG at a time:
+#  1. cordon the current nodes
+#  2. double the ASG's capacity, so it launches one replacement per node, and
+#     check the new nodes cover the same AZs as the old ones
+#  3. for each old node: drain it, terminate it while decrementing the desired
+#     capacity, and wait until every pod is healthy before the next one
+#  4. restore the ASG's original max size
+#
+# An instance refresh can't do this: it waits on scale-in protected instances
+# before launching their replacements, not after.
+#
+# Nodes outside an ASG (e.g. Karpenter's) are left alone.
+
+for bin in aws kubectl jq; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "eks:roll-nodes requires $bin" >&2; exit 1; }
+done
+
+pods_timeout="${usage_pods_timeout:-900}"
+
+log() { printf '>> %s\n' "$*" >&2; }
+
+# ask always waits for an answer; confirm is skipped by --yes
+ask() {
+  local answer
+  # drop whatever was typed while waiting (e.g. arrow keys), or it ends up in the answer
+  while read -r -s -t 0.1 -n 1024 _ </dev/tty; do :; done
+  while :; do
+    read -r -p ">> $* [y/N] " answer </dev/tty
+    case "$answer" in
+      y | Y | yes) return 0 ;;
+      n | N | no | "") log "aborted"; exit 1 ;;
+      *) log "answer y or n" ;;
+    esac
+  done
+}
+
+# Set while an ASG is half rolled, so any exit says what is left to do by hand.
+midway=""
+trap '[ -z "$midway" ] || log "stopped midway on ${midway}"' EXIT
+trap 'exit 130' INT
+confirm() {
+  [ "${usage_yes:-false}" = "true" ] && return 0
+  ask "$@"
+}
+
+asg_json() {
+  aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$1" \
+    --query 'AutoScalingGroups[0]' --output json
+}
+
+node_of() { # instance id -> kubernetes node name
+  kubectl get nodes -o json |
+    jq -r --arg id "$1" '.items[] | select(.spec.providerID | endswith("/" + $id)) | .metadata.name'
+}
+
+# Pods not healthy: pending, failed, or running with a container not ready.
+unhealthy_pods() {
+  kubectl get pods -A -o json | jq -r '
+    .items[]
+    | select(.status.phase != "Succeeded")
+    | select(.status.phase != "Running" or any(.status.containerStatuses[]?; .ready | not))
+    | "\(.metadata.namespace)/\(.metadata.name) \(.status.phase)"'
+}
+
+wait_pods_healthy() {
+  local deadline=$((SECONDS + pods_timeout)) bad
+  while :; do
+    bad="$(unhealthy_pods)"
+    [ -z "$bad" ] && { log "all pods healthy"; return 0; }
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      log "pods still not healthy after ${pods_timeout}s:"
+      printf '%s\n' "$bad" >&2
+      ask "continue anyway?"
+      return 0
+    fi
+    log "waiting for $(printf '%s\n' "$bad" | wc -l) pod(s) to be healthy..."
+    sleep 5
+  done
+}
+
+# Exits if the ASG can't be rolled safely right now.
+preflight() {
+  local asg="$1" group status id
+  status="$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name "$asg" \
+    --query 'InstanceRefreshes[0].Status' --output text)"
+  case "$status" in
+    Pending | InProgress | Cancelling | RollbackInProgress | Baking)
+      log "an instance refresh is ${status} on ${asg}, aborting"
+      exit 1
+      ;;
+  esac
+
+  group="$(asg_json "$asg")"
+  if [ "$(jq '[.Instances[] | select(.LifecycleState == "InService")] | length' <<<"$group")" -ne \
+    "$(jq '.DesiredCapacity' <<<"$group")" ]; then
+    log "${asg}: InService instances don't match its desired capacity, aborting"
+    exit 1
+  fi
+  if jq -e '.Instances[] | select(.ProtectedFromScaleIn)' <<<"$group" >/dev/null; then
+    log "${asg} has scale-in protected instances; remove the protection first, aborting"
+    exit 1
+  fi
+  for id in $(jq -r '.Instances[].InstanceId' <<<"$group"); do
+    [ -n "$(node_of "$id")" ] || { log "${asg}: instance ${id} is not a node of this cluster, aborting"; exit 1; }
+  done
+}
+
+roll() {
+  local asg="$1" group max_size desired new_max ready id node old_ids_json azs
+  local -a old_ids
+  local -A old_nodes
+
+  group="$(asg_json "$asg")"
+  max_size="$(jq -r '.MaxSize' <<<"$group")"
+  desired="$(jq -r '.DesiredCapacity' <<<"$group")"
+  mapfile -t old_ids < <(jq -r '.Instances[] | select(.LifecycleState == "InService") | .InstanceId' <<<"$group")
+  for id in "${old_ids[@]}"; do old_nodes[$id]="$(node_of "$id")"; done
+
+  log "=== ${asg} (desired ${desired}, max ${max_size})"
+  for id in "${old_ids[@]}"; do log "  ${id}  ${old_nodes[$id]}"; done
+  confirm "replace these ${#old_ids[@]} node(s)? (the ASG goes to ${desired} -> $((desired * 2)) -> ${desired})"
+
+  # If anything fails from here on, say what is left to put back by hand.
+  midway="${asg}: drain and terminate (decrementing the desired capacity) the old nodes still cordoned, then set its max size back to ${max_size}"
+
+  # 1. cordon the current nodes
+  for id in "${old_ids[@]}"; do kubectl cordon "${old_nodes[$id]}"; done
+
+  # 2. launch one replacement per node
+  new_max=$((desired * 2 > max_size ? desired * 2 : max_size))
+  aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$asg" \
+    --max-size "$new_max" --desired-capacity "$((desired * 2))"
+
+  log "waiting for ${desired} new node(s) to be Ready..."
+  while :; do
+    ready=0
+    for id in $(asg_json "$asg" | jq -r '.Instances[] | select(.LifecycleState == "InService") | .InstanceId'); do
+      [ -n "${old_nodes[$id]:-}" ] && continue
+      node="$(node_of "$id")"
+      [ -n "$node" ] || continue
+      [ "$(kubectl get node "$node" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" = "True" ] &&
+        ready=$((ready + 1))
+    done
+    [ "$ready" -ge "$desired" ] && break
+    log "${ready}/${desired} new node(s) Ready"
+    sleep 5
+  done
+  wait_pods_healthy
+
+  # The new nodes must cover the same AZs as the old ones: EBS volumes are
+  # bound to their AZ, so their pods can only move to a node in that same AZ.
+  old_ids_json="$(printf '%s\n' "${old_ids[@]}" | jq -R . | jq -s .)"
+  azs="$(asg_json "$asg" | jq -r --argjson old "$old_ids_json" '
+    [.Instances[] | select(.LifecycleState == "InService")
+     | {az: .AvailabilityZone, old: (.InstanceId as $i | $old | index($i) != null)}]
+    | group_by(.az)[]
+    | "\(.[0].az) \(map(select(.old)) | length) \(map(select(.old | not)) | length)"')"
+  log "nodes per AZ (az / old / new):"
+  sed 's/^/   /' <<<"$azs" >&2
+  if awk '$2 != $3 { bad = 1 } END { exit !bad }' <<<"$azs"; then
+    log "the new nodes are not spread across the AZs like the old ones"
+    ask "drain the old nodes anyway?"
+  fi
+
+  # 3. one old node at a time: drain, terminate, wait for pods
+  for id in "${old_ids[@]}"; do
+    node="${old_nodes[$id]}"
+    confirm "drain ${node} (${id})?"
+    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=15m
+
+    log "terminating ${id}"
+    aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$id" \
+      --should-decrement-desired-capacity --output text >/dev/null
+    while kubectl get node "$node" >/dev/null 2>&1; do
+      log "waiting for ${node} to leave the cluster..."
+      sleep 5
+    done
+
+    # EBS volumes from the removed node can take a few minutes to re-attach
+    wait_pods_healthy
+  done
+
+  # 4. back to the original size
+  aws autoscaling update-auto-scaling-group --auto-scaling-group-name "$asg" --max-size "$max_size"
+  midway=""
+  log "done: every node of ${asg} replaced"
+}
+
+# Which ASGs
+if [ -n "${usage_asg:-}" ]; then
+  asgs="$(aws autoscaling describe-auto-scaling-groups --output json |
+    jq -r --arg p "$usage_asg" '.AutoScalingGroups[].AutoScalingGroupName | select(startswith($p))')"
+  if [ -z "$asgs" ] || [ "$(wc -l <<<"$asgs")" -ne 1 ]; then
+    log "no single ASG matches '${usage_asg}':"
+    printf '%s\n' "$asgs" >&2
+    exit 1
+  fi
+else
+  # every ASG that owns a node of the cluster (providerID: aws:///<az>/<instance id>)
+  mapfile -t node_ids < <(kubectl get nodes -o json | jq -r '.items[].spec.providerID | split("/") | last')
+  # describe-auto-scaling-instances takes at most 50 instance ids per call
+  asgs="$(for ((i = 0; i < ${#node_ids[@]}; i += 50)); do
+    aws autoscaling describe-auto-scaling-instances --instance-ids "${node_ids[@]:i:50}" --output json |
+      jq -r '.AutoScalingInstances[].AutoScalingGroupName'
+  done | sort -u)"
+  [ -n "$asgs" ] || { log "no node of the cluster belongs to an ASG"; exit 1; }
+fi
+
+log "env: ${TERRABUTLER_ENV:-?} | aws: ${AWS_PROFILE:-?} | kube: $(kubectl config current-context)"
+mapfile -t asg_list <<<"$asgs"
+log "ASGs to roll, in this order:"
+for asg in "${asg_list[@]}"; do
+  preflight "$asg"
+  log "  ${asg}"
+done
+
+# Start from a healthy cluster: pods already unhealthy now would also hold
+# every wait below until it times out.
+bad="$(unhealthy_pods)"
+if [ -n "$bad" ]; then
+  log "$(wc -l <<<"$bad") pod(s) are not healthy before starting:"
+  printf '%s\n' "$bad" >&2
+  ask "start anyway?"
+else
+  log "all pods healthy"
+fi
+confirm "go?"
+
+for asg in "${asg_list[@]}"; do roll "$asg"; done
+log "all done"
