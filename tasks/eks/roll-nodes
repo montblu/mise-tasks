@@ -84,7 +84,7 @@ wait_pods_healthy() {
       return 0
     fi
     log "waiting for $(printf '%s\n' "$bad" | wc -l) pod(s) to be healthy..."
-    sleep 20
+    sleep 5
   done
 }
 
@@ -153,7 +153,7 @@ roll() {
     done
     [ "$ready" -ge "$desired" ] && break
     log "${ready}/${desired} new node(s) Ready"
-    sleep 30
+    sleep 5
   done
   wait_pods_healthy
 
@@ -183,7 +183,7 @@ roll() {
       --should-decrement-desired-capacity --output text >/dev/null
     while kubectl get node "$node" >/dev/null 2>&1; do
       log "waiting for ${node} to leave the cluster..."
-      sleep 20
+      sleep 5
     done
 
     # EBS volumes from the removed node can take a few minutes to re-attach
