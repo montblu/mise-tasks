@@ -27,6 +27,12 @@ Tasks are shell scripts that follow the [mise task](https://mise.jdx.dev/tasks/)
 | `k:pod-util-cpu` | Show pod utilization for all pods ordered by CPU usage (`kube-capacity`).        |
 | `k:pod-util-mem` | Show pod utilization for all pods ordered by memory usage (`kube-capacity`).     |
 
+### `eks`
+
+| Task             | Description                                                                                                                                                                                                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eks:roll-nodes` | Replaces every node of the EKS self-managed node groups (ASGs) with one on the current launch template (e.g. a new AMI after an EKS upgrade). Per ASG it cordons the old nodes, doubles the capacity, checks the new nodes cover the same AZs, then drains and terminates the old nodes one at a time, waiting for every pod to be healthy in between. Pass an `[asg]` (name or unique prefix) to roll only that one, `-y/--yes` to skip the step confirmations and `--pods-timeout` to change the pod wait (default: `900`s). Nodes outside an ASG (e.g. Karpenter's) are left alone. Requires `aws`, `kubectl` and `jq`. |
+
 ### `tf`
 
 | Task                          | Description                                                                                                                                             |
@@ -44,7 +50,7 @@ Point mise at this repository as a task source by adding it to your mise configu
 
 ```toml
 [task_config]
-includes = ["git::https://github.com/montblu/mise-tasks.git//tasks?ref=v2.0.0"]
+includes = ["git::https://github.com/montblu/mise-tasks.git//tasks?ref=v2.2.0"]
 ```
 
 Pinning `ref` to a tag is recommended: task names and arguments change between major versions. Use `ref=main` to always track the latest tasks.
@@ -70,6 +76,8 @@ mise k:pod-req-cpu
 mise k:pod-req-mem
 mise k:pod-util-cpu
 mise k:pod-util-mem
+mise eks:roll-nodes        # every ASG with nodes in the cluster
+mise eks:roll-nodes <asg>  # only that ASG (name or unique prefix)
 ```
 
 ## Environment Variables
